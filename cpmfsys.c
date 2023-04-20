@@ -3,12 +3,18 @@
  * Date last modified: April 20th, 2023
  * This file contains the implementations of the functions defined in cpmfsys.h
  */
+
+#include <ctype.h>
+
 #include "cpmfsys.h"
 #include "diskSimulator.h"
 
 // Initialize a list of free blocks
 bool freeList[NUM_BLOCKS];
 
+/**
+ * Utility function which trims the leading and trailing whitespace from a string 
+ */
 void trim_string(char *str) {
     // Trim leading whitespace
     char *start = str;
