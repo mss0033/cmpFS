@@ -9,6 +9,8 @@
 #include "cpmfsys.h"
 #include "diskSimulator.h"
 
+#define UNUSED_STATUS_CODE 0xe5
+
 // Initialize a list of free blocks
 bool freeList[NUM_BLOCKS];
 
@@ -48,31 +50,37 @@ void trim_string(char *str) {
  */
 DirStructType *mkDirStruct(int index, uint8_t *e) 
 {
+    // If the index is invalid, return NULL
     if (index < 0 || index >= EXTENT_SIZE) 
     {
         return NULL; // Invalid index
     }
 
+    // Allow memory for a new DirStructType
     DirStructType *dir_struct = (DirStructType *)malloc(sizeof(DirStructType));
     if (!dir_struct) 
     {
         return NULL; // Memory allocation failed
     }
 
-    const char space[1] = " ";
-
+    // Extract the beginning of the extend
     uint8_t *extent_start = e + (index * EXTENT_SIZE);
+    // Extract the status of the file
     dir_struct->status = extent_start[0];
+    // Extract the name of the file
     strncpy(dir_struct->name, (char *)&extent_start[1], 8);
+    // trim the file name
     trim_string(dir_struct->name);
-    //dir_struct->name[8] = '\0';
+    // Extract the file extension
     strncpy(dir_struct->extension, (char *)&extent_start[9], 3);
+    // trim the file extension
     trim_string(dir_struct->extension);
-    //dir_struct->extension[3] = '\0';
+    // Extract the file size meta-data
     dir_struct->XL = extent_start[12];
     dir_struct->BC = extent_start[13];
     dir_struct->XH = extent_start[14];
     dir_struct->RC = extent_start[15];
+    // Copy the file data
     memcpy(dir_struct->blocks, extent_start + 16, BLOCKS_PER_EXTENT);
 
     return dir_struct;
@@ -83,19 +91,26 @@ DirStructType *mkDirStruct(int index, uint8_t *e)
  */
 void writeDirStruct(DirStructType *d, uint8_t index, uint8_t *e) 
 {
+    // If the strcut or index is invalid, return
     if (!d || index >= EXTENT_SIZE) 
     {
         return; // Invalid input
     }
 
+    // Extract the extent start
     uint8_t *extent_start = e + (index * EXTENT_SIZE);
+    // Write the status
     extent_start[0] = d->status;
+    // Write the name
     strncpy((char *)&extent_start[1], d->name, 8);
+    // Write the extension
     strncpy((char *)&extent_start[9], d->extension, 3);
+    // Write the file meta-data
     extent_start[12] = d->XL;
     extent_start[13] = d->BC;
     extent_start[14] = d->XH;
     extent_start[15] = d->RC;
+    // Wrtie the data
     memcpy(extent_start + 16, d->blocks, BLOCKS_PER_EXTENT);
 }
 
@@ -123,13 +138,14 @@ void makeFreeList()
         DirStructType *dir_struct = mkDirStruct(i, block0);
 
         // If the extent is not used, continue to the next extent
-        if (dir_struct->status == 0xe5) 
+        if (dir_struct->status == UNUSED_STATUS_CODE) 
         {
+            // Free up the DirStruct
             free(dir_struct);
             continue;
         }
 
-        // Iterate through all blocks in the extent and mark them as used in the freeList
+        // For all blocks in the extent and mark them as used in the freeList
         int j;
         for (j = 0; j < BLOCKS_PER_EXTENT; j++) 
         {
@@ -142,6 +158,7 @@ void makeFreeList()
             }
         }
 
+        // Free up the DirStruct
         free(dir_struct);
     }
 }
@@ -177,18 +194,21 @@ void printFreeList()
  */
 int findExtentWithName(char *name, uint8_t *block0) 
 {
+    // If the name is invalid return an error code
     if (!name || strlen(name) == 0) 
     {
         return -1; // Invalid name
     }
 
+    // For each extent
     int i;
     for (i = 0; i < EXTENT_SIZE; i++) 
     {
+        // Extract the DirStruct for the next extent
         DirStructType *dir_struct = mkDirStruct(i, block0);
 
         // If the extent is unused, continue to the next extent
-        if (dir_struct->status == 0xe5) 
+        if (dir_struct->status == UNUSED_STATUS_CODE) 
         {
             free(dir_struct);
             continue;
@@ -196,18 +216,24 @@ int findExtentWithName(char *name, uint8_t *block0)
 
         // Check if the name matches the extent's name and extension
         char* file_name = strdup(dir_struct->name);
+        // If there is an extension, add it to the file name
         if (strlen(dir_struct->extension) != 0)
         {   
             strcat(file_name, ".");
             strcat(file_name, dir_struct->extension);
         }
+        // If the file name is a match
         if (strcmp(name, file_name) == 0) 
-        {
+        { 
+            // Get the index of the extent
             int found_index = i;
+            // Free up the DirStruct
             free(dir_struct);
+            // Return the index
             return found_index;
         }
 
+        // Free up the DirStruct
         free(dir_struct);
     }
 
@@ -219,6 +245,7 @@ int findExtentWithName(char *name, uint8_t *block0)
  */
 bool checkLegalName(char *name) 
 {
+    // If the name is invalid return false
     if (!name || strlen(name) == 0) 
     {
         return false; // Invalid name
@@ -236,8 +263,10 @@ bool checkLegalName(char *name)
 
     // Check for illegal characters in the name and extension
     size_t i;
+    // For each character in the name
     for (i = 0; i < name_len; i++) 
     {
+        // If the name contains an invalid character return false
         if (!((name[i] >= 'A' && name[i] <= 'Z') 
             || (name[i] >= 'a' && name[i] <= 'z') 
             ||(name[i] >= '0' && name[i] <= '9') 
@@ -246,13 +275,13 @@ bool checkLegalName(char *name)
             return false;
         }
     }
-
+    // For each character in the extension
     for (i = 0; i < ext_len; i++) 
     {
+        // If the extension contains an invalid character return false
         if (!((dot_position[i + 1] >= 'A' && dot_position[i + 1] <= 'Z') 
             || (dot_position[i + 1] >= 'a' && dot_position[i + 1] <= 'z') 
-            || (dot_position[i + 1] >= '0' && dot_position[i + 1] <= '9') 
-            || dot_position[i + 1] == '_'))
+            || (dot_position[i + 1] >= '0' && dot_position[i + 1] <= '9')))
         {
             return false;
         }
@@ -271,13 +300,14 @@ void cpmDir()
     uint8_t block0[BLOCK_SIZE];
     blockRead(block0, 0);
     
+    // For each extent
     int i;
     for (i = 0; i < EXTENT_SIZE; i++) 
     {
         DirStructType *dir_struct = mkDirStruct(i, block0);
 
         // If the extent is unused, continue to the next extent
-        if (dir_struct->status == 0xe5) 
+        if (dir_struct->status == UNUSED_STATUS_CODE) 
         {
             free(dir_struct);
             continue;
@@ -288,20 +318,19 @@ void cpmDir()
         int j;
         for (j = 0; j < BLOCKS_PER_EXTENT; j++) 
         {
-            if (dir_struct->blocks[j] != 0) {
+            if (dir_struct->blocks[j] != false) 
+            {
                 num_blocks++;
             }
         }
 
         // Off by one error somewhere, haven't found it yet
         num_blocks--;
-
         // Calculate file size
         uint32_t file_size = (num_blocks * BLOCK_SIZE) + (dir_struct->RC * 128) + dir_struct->BC;
-
         // Print file name, extension, and size
         printf("%s.%s %u\n", dir_struct->name, dir_struct->extension, file_size);
-
+        // Free up the DirStruct
         free(dir_struct);
     }
 }
@@ -311,6 +340,7 @@ void cpmDir()
  */
 int cpmRename(char *oldName, char *newName) 
 {
+    // If either file name is invalid return an error code
     if (!checkLegalName(oldName) || !checkLegalName(newName)) 
     {
         return -2; // Invalid filename
@@ -334,13 +364,20 @@ int cpmRename(char *oldName, char *newName)
 
     // Rename the file
     DirStructType *dir_struct = mkDirStruct(old_extent_index, block0);
-    strncpy(dir_struct->name, newName, 8);
-    strncpy(dir_struct->extension, newName + 9, 3);
-
+    // Figure out how long the new name is
+    char *dot_position = strchr(newName, '.');
+    size_t name_len = dot_position ? (size_t)(dot_position - newName) : strlen(newName);
+    size_t ext_len = dot_position ? strlen(dot_position + 1) : 0;
+    // Erase the old name & extension
+    memset(dir_struct->name, '\0', 9);
+    memset(dir_struct->extension, '\0', 4);
+    // Copy the new name
+    strncpy(dir_struct->name, newName, name_len);
+    strncpy(dir_struct->extension, newName + name_len + 1, ext_len);
     // Write the updated DirStructType back to block 0
     writeDirStruct(dir_struct, old_extent_index, block0);
     blockWrite(block0, 0);
-
+    // Free up the DirStruct
     free(dir_struct);
 
     return 0; // Normal completion
@@ -351,17 +388,20 @@ int cpmRename(char *oldName, char *newName)
  */
 int cpmDelete(char *name) 
 {
+    // If the name is invalid return an error code
     if (!checkLegalName(name)) 
     {
         printf("Error, illegal file name");
         return -2; // Invalid filename
     }
 
+    // Initialize the block 0
     uint8_t block0[BLOCK_SIZE];
     blockRead(block0, 0);
 
     // Find the extent with the specified name
     int extent_index = findExtentWithName(name, block0);
+    // If the extent index is invalid return an error code
     if (extent_index == -1) 
     {
         printf("File not found");
@@ -370,6 +410,7 @@ int cpmDelete(char *name)
 
     // Get the DirStructType for the found extent
     DirStructType *dir_struct = mkDirStruct(extent_index, block0);
+    // If the DirStrcut is NULL return an error code
     if (dir_struct == NULL)
     {
         printf("Error creating DirStructType");
@@ -377,13 +418,15 @@ int cpmDelete(char *name)
     }
 
     // Mark the extent as unused
-    dir_struct->status = 0xe5;
+    dir_struct->status = UNUSED_STATUS_CODE;
 
     // Update the free list
     int i;
+    // For each block per extent
     for (i = 0; i < BLOCKS_PER_EXTENT; i++) 
     {
-        if (dir_struct->blocks[i] != 0) 
+        // If the block isn't being used
+        if (dir_struct->blocks[i] != false) 
         {
             freeList[dir_struct->blocks[i]] = true;
         }
@@ -392,8 +435,8 @@ int cpmDelete(char *name)
     // Write the updated DirStructType back to block 0
     writeDirStruct(dir_struct, extent_index, block0);
     blockWrite(block0, 0);
-
-    free(dir_struct);
+    // Free up the DirStruct
+    free(dir_struct); 
 
     return 0; // Normal completion
 }
